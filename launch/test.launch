@@ -1,0 +1,5 @@
+<launch>
+	<node name="image" pkg="ardrone_autonomy" type="image_pro"/>
+	<node name="distance" pkg="ardrone_autonomy" type="distance"/>
+	<node name="error" pkg="ardrone_autonomy" type="error" output="screen"/>
+</launch>
