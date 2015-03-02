@@ -60,7 +60,7 @@ void set_drone_to_hover(ros::Publisher send_command) {
 
 void move_drone(ros::Publisher send_command, float velocity_x, float velocity_z, float yaw_speed) {
 	geometry_msgs::Twist msg;
-//	msg.linear.x = velocity_x;
+	msg.linear.x = velocity_x;
 	msg.linear.y = 0;
 	msg.linear.z = velocity_z;
 	msg.angular.x = 1;
@@ -110,15 +110,15 @@ class increase_altitude {
 void callback(const ardrone_autonomy::image::ConstPtr& pixels, const ardrone_autonomy::distance::ConstPtr& distance, ros::Publisher send_command) {
 
 	float max_speed = 11.11;
-	float veloctiy_cap = 0.1;
-	float yaw_cap = 0.2;
+	float veloctiy_cap = 0.2;
+	float yaw_cap = 0.3;
 
 	//calculate forward speed
 	float velocity = (distance->x - 3)/max_speed;
 	velocity = velocity > veloctiy_cap ? veloctiy_cap : velocity;
 	velocity = velocity < -veloctiy_cap ? -veloctiy_cap : velocity;
-	velocity = 0; //TEMP-REMOVE ONCE IMAGE_PRO HAS BEEN TESTED
-	ROS_INFO("Req_velocity: [%f]", velocity);
+	//velocity = 0; //TEMP-REMOVE ONCE IMAGE_PRO HAS BEEN TESTED
+	ROS_INFO("Distance: [%f] , Req_velocity: [%f]", distance->x, velocity);
 
 	//calculate yaw speed
 	float yaw_speed = pixels->pixels * (-0.0025);

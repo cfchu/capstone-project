@@ -40,7 +40,7 @@ int main (int argc, char **argv) {
 	pclose(in);
 
 //	k = -20*log10(3) + ( (signal_level/2) - 100);
-	k = 3 + signal_level;
+	k = 3 + signal_level*5;
 
 	for (int i=0; i<iterations; i++)
 		signal_strength_array[i]=signal_level;
@@ -80,7 +80,7 @@ int main (int argc, char **argv) {
 //		exp = (k + signal_dbm)/(-20);
 //      distance = pow(10,exp);
 
-		distance = (k - average_level);
+		distance = (k - average_level)/5;
 		
 		//Publish distance
 		ardrone_autonomy::distance msg;

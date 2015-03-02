@@ -18,25 +18,27 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/objdetect/objdetect.hpp>
 #include <cv_bridge/cv_bridge.h>
- 
+
 /*here is a simple program which demonstrates the use of ros and opencv to do image manipulations on video streams given out as image topics from the monocular vision
 of robots,here the device used is a ardrone(quad-rotor).*/
- 
+
 using namespace std;
 using namespace cv;
 namespace enc = sensor_msgs::image_encodings;
- 
+
 static const char WINDOW[] = "Image window";
- 
+
 class simplecanny
 {
   ros::NodeHandle nh_;
   ros::NodeHandle n;
   ros::Publisher pix_pub;
 
-  image_transport::ImageTransport it_;    
-  image_transport::Subscriber image_sub_; //image subscriber 
+  image_transport::ImageTransport it_;
+  image_transport::Subscriber image_sub_; //image subscriber
   image_transport::Publisher image_pub_; //image publisher(we subscribe to ardrone image_raw)
+
+  float focal_length = 0; //Variable that holds focal length for distance calibration
 
 public:
 	simplecanny(): it_(nh_){
@@ -45,32 +47,35 @@ public:
 		pix_pub= n.advertise<ardrone_autonomy::image>("dpix_pub",1);
 		cv::namedWindow(WINDOW);
 	}
- 
+
   ~simplecanny(){
     cv::destroyWindow(WINDOW);
   }
- 
+
   void imageCb(const sensor_msgs::ImageConstPtr& msg){
 
     /* OpenCV image pointer, copy message and point to copied image */
-    cv_bridge::CvImagePtr cv_imgptr; 
-    cv_imgptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8); 
- 
+    cv_bridge::CvImagePtr cv_imgptr_orig;
+	cv::Mat cv_imgptr;
+    cv_imgptr_orig = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+	cv::resize(cv_imgptr_orig->image, cv_imgptr, Size(), 1.25, 1.25, INTER_AREA);
+
     /* Create cascade classifier, loaded with XML file */
     const char* cascade_name = "/home/odroid/catkin_ws/src/ardrone_autonomy/XML/lbpcascade_frontalface.xml";
     cv::CascadeClassifier cascade;
     cascade.load(cascade_name);
-    
+
     /* Create new CV image w/ grayscale */
-    cv::Size image_size(cv_imgptr->image.cols, cv_imgptr->image.rows);
+	cv::Size image_size(cv_imgptr.cols, cv_imgptr.rows);
+//	cv::Size image_size(320, 320);
     cv::Mat gray = cv::Mat(image_size, CV_8UC1);
-    cv::cvtColor(cv_imgptr->image, gray, CV_BGR2GRAY);
+    cv::cvtColor(cv_imgptr, gray, CV_BGR2GRAY);
 
     /*Create vector of type Rect and then use cascade classifier to detect all rects and store in faces */
     vector<cv::Rect> faces;
     faces.clear();
     cascade.detectMultiScale(gray, faces, 1.2, 3, 0, cv::Size( 40, 40));
-    
+
     vector<int> face_area;
 	ardrone_autonomy::image msg_pub;
 	msg_pub.header.frame_id= "Image";
@@ -90,7 +95,7 @@ public:
 	static cv::Scalar RED = cv::Scalar(0, 0, 255);
 	int max = 0;
 	int index = 0;
- 
+
 	for (int i = 0; i < face_area.size(); ++i){
 	  if (face_area[i] > max)
 		index = i;
@@ -98,31 +103,43 @@ public:
 
 	/* Iterate through all faces found again, */
 	if (faces.size()>0){
-	  CvPoint ul_final; CvPoint lr_final;
-	  ul_final.x = faces[index].x; ul_final.y = faces[index].y; 
-	  lr_final.x = ul_final.x + faces[index].width; lr_final.y = ul_final.y + faces[index].height;
-	
-	  cv::rectangle(cv_imgptr->image, ul_final, lr_final, RED, 3, 8, 0);
-	  
+	  CvPoint ul_final;
+	  CvPoint lr_final;
+
+	  ul_final.x = faces[index].x;
+	  ul_final.y = faces[index].y;
+
+	  lr_final.x = ul_final.x + faces[index].width;
+	  lr_final.y = ul_final.y + faces[index].height;
+
+	  if (focal_length == 0)
+		focal_length = 200 * faces[index].width / 15.24;
+
+	  float distance = focal_length * 15.24 / faces[index].width;
+          ROS_INFO("Distance: %f", distance);
+          ROS_INFO("Distance: %d", faces[index].width);
+
+	  cv::rectangle(cv_imgptr, ul_final, lr_final, RED, 3, 8, 0);
+
 	  msg_pub.header.stamp = ros::Time::now();
-	  msg_pub.pixels = (((lr_final.x+ul_final.x)/2) - ((cv_imgptr->image.cols)/2));
+	  msg_pub.pixels = (((lr_final.x+ul_final.x)/2) - ((cv_imgptr.cols)/2));
 	  ROS_INFO("lr.x: %d, ur.x: %d", lr_final.x,ul_final.x);
 	  ROS_INFO("msgvalue:%d", msg_pub.pixels);
 	  pix_pub.publish(msg_pub);
 	}
 
-    cv::imshow(WINDOW,cv_imgptr->image);
+    cv::imshow(WINDOW,cv_imgptr);
     cv::waitKey(2);
 }
 };
- 
- 
+
+
 int main(int argc, char** argv)
 {
 	ros::init(argc, argv, "image_processing");
 	simplecanny processing_obj;
 
 	ros::spin();
- 
+
 	return 0;
 }
