@@ -157,9 +157,9 @@ install(DIRECTORY launch/
 )
 
 #Distance module
-add_executable(distance  src/linear_distance_ros.cpp)
-target_link_libraries(distance ${catkin_LIBRARIES})
-add_dependencies(distance project_files_generate_messages_cpp)
+#add_executable(distance  src/linear_distance_ros.cpp)
+#target_link_libraries(distance ${catkin_LIBRARIES})
+#add_dependencies(distance project_files_generate_messages_cpp)
 
 #Error module
 add_executable(error  src/error_ros.cpp)

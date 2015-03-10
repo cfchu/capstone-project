@@ -7,10 +7,11 @@
 #include <ros/ros.h>
 #include <std_msgs/String.h>
 #include <std_msgs/Int32.h>
+
 #include <ardrone_autonomy/image.h>
 #include <image_transport/image_transport.h>
 #include <sensor_msgs/image_encodings.h>
-
+#include <ardrone_autonomy/distance.h>
 #include <opencv/cv.h>
 #include <opencv/cxcore.h>
 #include <opencv/highgui.h>
@@ -36,6 +37,7 @@ class simplecanny
 
   image_transport::ImageTransport it_;
   image_transport::Subscriber image_sub_; //image subscriber
+  ros::Publisher distance_pub; //distance publisher
   image_transport::Publisher image_pub_; //image publisher(we subscribe to ardrone image_raw)
 
   float focal_length = 0; //Variable that holds focal length for distance calibration
@@ -45,6 +47,7 @@ public:
 		image_sub_ = it_.subscribe("/ardrone/image_raw", 1, &simplecanny::imageCb, this);
 		image_pub_= it_.advertise("/arcv/Image",1);
 		pix_pub= n.advertise<ardrone_autonomy::image>("dpix_pub",1);
+		distance_pub = n.advertise<ardrone_autonomy::distance>("distance", 1000);
 		cv::namedWindow(WINDOW);
 	}
 
@@ -112,12 +115,24 @@ public:
 	  lr_final.x = ul_final.x + faces[index].width;
 	  lr_final.y = ul_final.y + faces[index].height;
 
+//--------------------- calculating distance here---------------------------
+
+// check if focal length is 0 and initialize it. the facewidth is approximately 6 inches and distance is 2 m.
+
 	  if (focal_length == 0)
 		focal_length = 200 * faces[index].width / 15.24;
 
+// use focal length to calculate distance away.
 	  float distance = focal_length * 15.24 / faces[index].width;
           ROS_INFO("Distance: %f", distance);
           ROS_INFO("Distance: %d", faces[index].width);
+          ardrone_autonomy::distance distance_msg;
+	  distance_msg.header.stamp = ros::Time::now();
+	  distance_msg.x = distance;
+	  distance_pub.publish(distance_msg);
+
+
+//--------------------- calculating distance ends here---------------------------
 
 	  cv::rectangle(cv_imgptr, ul_final, lr_final, RED, 3, 8, 0);
 

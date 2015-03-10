@@ -86,7 +86,7 @@ class increase_altitude {
 		
 		void callback(const ardrone_autonomy::Navdata::ConstPtr& msg) {
 			current_altitude = msg->altd;
-			move_drone(move_drone_pub, 0, 0.2, 0);
+			move_drone(move_drone_pub, 0, 0.4, 0);
 		}
 		
 		void run() {
@@ -107,24 +107,82 @@ class increase_altitude {
 		}
 };
 
-void callback(const ardrone_autonomy::image::ConstPtr& pixels, const ardrone_autonomy::distance::ConstPtr& distance, ros::Publisher send_command) {
+class PI_controller {
+	double time_stamp_prev;
+	float integral;
+	float SP;
+	float kp, ki, kd;
+	float outMax, outMin;
+	float prev_error[3];
+	float output_slew_rate, prev_output;
+	
+	public:
+		PI_controller(float SP_in, float slew_rate_in, float outMax_in, float outMin_in, float kp_in, float ki_in, float kd_in) {
+			time_stamp_prev = 0;
+			integral = 0;
+			kp = kp_in; ki = ki_in; kd = kd_in;
+			SP = SP_in;
+			outMax = outMax_in;
+			outMin = outMin_in;
+			prev_error[0] = 0; prev_error[1] = 0; prev_error[2] = 0;
+			output_slew_rate = slew_rate_in;
+			prev_output = 0;
+		}
+		
+		float compute_output(float PV){
+			float error, dt, output;
+			
+			double time_stamp_curr = ros::Time::now().toSec();
+			dt = time_stamp_curr - time_stamp_prev;
+			//compute error
+			error = SP - PV;
+			
+			//compute integral term
+			integral = integral + (error*dt);
+			
+			if (integral > outMax) integral = outMax;
+			else if(integral < outMin) integral = outMin;
+			
+			//compute derivative term
+			float derivative = ((error + 3*prev_error[2] - 3*prev_error[1] - prev_error[0])/6)/dt;
+			
+			ROS_INFO("Error: [%f] , Integral: [%f], Derivative: [%f]", error, integral, derivative);
+//			ROS_INFO("Current: [%f], Prev: [%f]", time_stamp_curr, time_stamp_prev);
+			ROS_INFO("dt: [%f]", dt);
+			ROS_INFO("prev_error[0]: [%f], prev_error[1]: [%f], prev_error[2]: [%f]", prev_error[0], prev_error[1], prev_error[2]);
+			
+			//compute output
+			output = (kp*error) + (ki*integral) + (kd*derivative);
+			//slew rate
+			if (output-prev_output > output_slew_rate) output = prev_output+output_slew_rate;
+			else if (output-prev_output < -output_slew_rate) output = prev_output-output_slew_rate;
+			//cap output
+			if (output > outMax) output = outMax;
+			else if(output < outMin) output = outMin;
+			
+			time_stamp_prev = time_stamp_curr;
+			prev_output = output;
+			prev_error[1] = prev_error[0];
+			prev_error[2] = prev_error[1];
+			prev_error[0] = error;
+			
+			return output;
+		}
+};
 
-	float max_speed = 11.11;
-	float veloctiy_cap = 0.2;
-	float yaw_cap = 0.3;
+void callback(const ardrone_autonomy::image::ConstPtr& pixels, \
+			  const ardrone_autonomy::distance::ConstPtr& distance, \
+			  ros::Publisher send_command, \
+			  PI_controller &velocity_PI, \
+			  PI_controller &yaw_PI) {
 
 	//calculate forward speed
-	float velocity = (distance->x - 3)/max_speed;
-	velocity = velocity > veloctiy_cap ? veloctiy_cap : velocity;
-	velocity = velocity < -veloctiy_cap ? -veloctiy_cap : velocity;
-	//velocity = 0; //TEMP-REMOVE ONCE IMAGE_PRO HAS BEEN TESTED
-	ROS_INFO("Distance: [%f] , Req_velocity: [%f]", distance->x, velocity);
+	float velocity = -velocity_PI.compute_output(distance->x);
+	ROS_INFO("Distance: [%f] , ----->Req_velocity: [%f]<-----\n", distance->x, velocity);
 
 	//calculate yaw speed
-	float yaw_speed = pixels->pixels * (-0.0025);
-	yaw_speed = yaw_speed > yaw_cap ? yaw_cap : yaw_speed;
-	yaw_speed = yaw_speed < -yaw_cap ? -yaw_cap : yaw_speed;
-	ROS_INFO("Yaw Speed: [%f]", yaw_speed);
+	float yaw_speed = yaw_PI.compute_output(pixels->pixels);
+	ROS_INFO("----->Yaw Speed: [%f]<------\n", yaw_speed);
 
 	if (yaw_speed == 0 && velocity == 0) {
 		set_drone_to_hover(send_command);
@@ -139,13 +197,17 @@ int main (int argc, char **argv) {
 
 	ros::NodeHandle n;
 	ros::Publisher send_command;
+	
+	//intialize PI_controller objects
+	PI_controller velocity_PI(200, 0.1, 0.1, -0.1, 0.001, 0, 0.0015);
+	PI_controller yaw_PI     (0, 0.1, 0.5, -0.5, 0.0015, 0, 0.004);
 
 	//connect to the cmd_vel topic
 	send_command = n.advertise<geometry_msgs::Twist>("cmd_vel", 1000);
 	
 	//start drone
 	initialize_drone(n);
-	usleep(5*1000*1000);
+	usleep(3*1000*1000);
 	set_drone_to_hover(send_command);
 	//increase altitude of drone from default
 	increase_altitude increase(send_command, n, 1300);
@@ -159,7 +221,7 @@ int main (int argc, char **argv) {
 	typedef message_filters::sync_policies::ApproximateTime<ardrone_autonomy::image, ardrone_autonomy::distance> MySyncPolicy;
 	message_filters::Synchronizer<MySyncPolicy> sync(MySyncPolicy(10), pixel_sub, distance_sub);
 	
-	sync.registerCallback(boost::bind(&callback, _1, _2, send_command));
+	sync.registerCallback(boost::bind(&callback, _1, _2, send_command, velocity_PI, yaw_PI));
 	
 	ros::spin();
 
