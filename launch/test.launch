@@ -1,4 +1,4 @@
 <launch>
 	<node name="image" pkg="ardrone_autonomy" type="image_pro"/>
-	<node name="error" pkg="ardrone_autonomy" type="error" output="screen"/>
+	<node name="error" pkg="ardrone_autonomy" type="error" args="0.0006 0 0.02 0.0009 0 0.0015" output="screen"/>
 </launch>

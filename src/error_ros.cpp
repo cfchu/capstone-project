@@ -8,6 +8,7 @@
 #include <std_msgs/String.h>
 #include <std_msgs/Int32.h>
 #include <std_msgs/Empty.h>
+#include <std_msgs/Bool.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -41,7 +42,7 @@ void initialize_drone(ros::NodeHandle n) {
 	system("rosservice call /ardrone/flattrim");
 	
 	takeoff = n.advertise<std_msgs::Empty>("/ardrone/takeoff", 1, true);
-	usleep (5*1000*1000);
+	usleep (6*1000*1000);
 	ROS_INFO("INFO: Taking Off!");
 	takeoff.publish(empty_msg);
 }
@@ -63,8 +64,8 @@ void move_drone(ros::Publisher send_command, float velocity_x, float velocity_z,
 	msg.linear.x = velocity_x;
 	msg.linear.y = 0;
 	msg.linear.z = velocity_z;
-	msg.angular.x = 1;
-	msg.angular.y = 1;
+	msg.angular.x = 0;
+	msg.angular.y = 0;
 	msg.angular.z = yaw_speed;
 
 	send_command.publish(msg);
@@ -97,13 +98,14 @@ class increase_altitude {
 			navdata_altitude = nh.subscribe<ardrone_autonomy::Navdata> ("/ardrone/navdata", 1, &increase_altitude::callback, this);
 			
 			while (current_altitude < desired_altitude) {
-				ROS_INFO("INFO: Current altitude: %d, Desired altitude: %d", current_altitude, desired_altitude);
+//				ROS_INFO("INFO: Current altitude: %d, Desired altitude: %d", current_altitude, desired_altitude);
 				ros::spinOnce();
 			}
 			set_drone_to_hover(move_drone_pub);
 			navdata_altitude.shutdown();
 			
 			ROS_INFO("INFO: Altitude is now %d", current_altitude);
+			return;
 		}
 };
 
@@ -134,22 +136,21 @@ class PI_controller {
 			
 			double time_stamp_curr = ros::Time::now().toSec();
 			dt = time_stamp_curr - time_stamp_prev;
+			
 			//compute error
 			error = SP - PV;
 			
 			//compute integral term
 			integral = integral + (error*dt);
 			
-			if (integral > outMax) integral = outMax;
-			else if(integral < outMin) integral = outMin;
+//			if (integral > outMax) integral = outMax;
+//			else if(integral < outMin) integral = outMin;
 			
 			//compute derivative term
 			float derivative = ((error + 3*prev_error[2] - 3*prev_error[1] - prev_error[0])/6)/dt;
 			
 			ROS_INFO("Error: [%f] , Integral: [%f], Derivative: [%f]", error, integral, derivative);
-//			ROS_INFO("Current: [%f], Prev: [%f]", time_stamp_curr, time_stamp_prev);
 			ROS_INFO("dt: [%f]", dt);
-			ROS_INFO("prev_error[0]: [%f], prev_error[1]: [%f], prev_error[2]: [%f]", prev_error[0], prev_error[1], prev_error[2]);
 			
 			//compute output
 			output = (kp*error) + (ki*integral) + (kd*derivative);
@@ -178,7 +179,7 @@ void callback(const ardrone_autonomy::image::ConstPtr& pixels, \
 
 	//calculate forward speed
 	float velocity = -velocity_PI.compute_output(distance->x);
-	ROS_INFO("Distance: [%f] , ----->Req_velocity: [%f]<-----\n", distance->x, velocity);
+	ROS_INFO("----->Req_velocity: [%f]<-----, Distance: [%f] , \n", velocity, distance->x);
 
 	//calculate yaw speed
 	float yaw_speed = yaw_PI.compute_output(pixels->pixels);
@@ -197,21 +198,32 @@ int main (int argc, char **argv) {
 
 	ros::NodeHandle n;
 	ros::Publisher send_command;
+	ros::Publisher ready_pub;
 	
 	//intialize PI_controller objects
-	PI_controller velocity_PI(200, 0.1, 0.1, -0.1, 0.001, 0, 0.0015);
-	PI_controller yaw_PI     (0, 0.1, 0.5, -0.5, 0.0015, 0, 0.004);
+	//PI_controller velocity_PI(200, 0.1, 0.1, -0.1, 0.0003, 0, 0.0025);
+	//PI_controller yaw_PI     (0, 0.1, 0.5, -0.5, 0.0015, 0, 0.004);
+	PI_controller velocity_PI(200, 0.1, 0.1, -0.1, atof(argv[1]), atof(argv[2]), atof(argv[3]));
+	PI_controller yaw_PI     (0, 0.2, 0.5, -0.5, atof(argv[4]), atof(argv[5]), atof(argv[6]));
 
 	//connect to the cmd_vel topic
 	send_command = n.advertise<geometry_msgs::Twist>("cmd_vel", 1000);
+	//connect to the ready topic
+	ready_pub = n.advertise<std_msgs::Bool>("ready",1);
 	
 	//start drone
 	initialize_drone(n);
 	usleep(3*1000*1000);
 	set_drone_to_hover(send_command);
+	
 	//increase altitude of drone from default
 	increase_altitude increase(send_command, n, 1300);
 	increase.run();
+	
+	//send ready signal to image_pro
+	std_msgs::Bool ready;
+	ready.data = true;
+	ready_pub.publish(ready);
 	
 	//subscribe to distance and image_pro
 	message_filters::Subscriber<ardrone_autonomy::image> pixel_sub(n, "dpix_pub", 1);
@@ -222,7 +234,7 @@ int main (int argc, char **argv) {
 	message_filters::Synchronizer<MySyncPolicy> sync(MySyncPolicy(10), pixel_sub, distance_sub);
 	
 	sync.registerCallback(boost::bind(&callback, _1, _2, send_command, velocity_PI, yaw_PI));
-	
+		
 	ros::spin();
 
 	return 0;

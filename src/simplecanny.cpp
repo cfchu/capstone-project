@@ -7,6 +7,7 @@
 #include <ros/ros.h>
 #include <std_msgs/String.h>
 #include <std_msgs/Int32.h>
+#include <std_msgs/Bool.h>
 
 #include <ardrone_autonomy/image.h>
 #include <image_transport/image_transport.h>
@@ -20,140 +21,161 @@
 #include <opencv2/objdetect/objdetect.hpp>
 #include <cv_bridge/cv_bridge.h>
 
-/*here is a simple program which demonstrates the use of ros and opencv to do image manipulations on video streams given out as image topics from the monocular vision
-of robots,here the device used is a ardrone(quad-rotor).*/
-
 using namespace std;
 using namespace cv;
-namespace enc = sensor_msgs::image_encodings;
 
 static const char WINDOW[] = "Image window";
 
 class simplecanny
 {
-  ros::NodeHandle nh_;
-  ros::NodeHandle n;
-  ros::Publisher pix_pub;
+	ros::NodeHandle nh_;
+	ros::NodeHandle n;
+	ros::Publisher pix_pub;
+	
+	const char* cascade_name;
+	cv::CascadeClassifier cascade;
+	
+	image_transport::ImageTransport it_;
+	image_transport::Subscriber image_sub_; //image subscriber
+	ros::Publisher distance_pub; //distance publisher
+	image_transport::Publisher image_pub_; //image publisher(we subscribe to ardrone image_raw)
 
-  image_transport::ImageTransport it_;
-  image_transport::Subscriber image_sub_; //image subscriber
-  ros::Publisher distance_pub; //distance publisher
-  image_transport::Publisher image_pub_; //image publisher(we subscribe to ardrone image_raw)
+	float focal_length; //Variable that holds focal length for distance calibration
 
-  float focal_length = 0; //Variable that holds focal length for distance calibration
+	public:
+		simplecanny(): it_(nh_){
+			image_sub_ = it_.subscribe("/ardrone/image_raw", 1, &simplecanny::imageCb, this);
+			image_pub_= it_.advertise("/arcv/Image",1);
+			pix_pub= n.advertise<ardrone_autonomy::image>("dpix_pub",1);
+			distance_pub = n.advertise<ardrone_autonomy::distance>("distance", 1000);
+			cv::namedWindow(WINDOW);
+			
+			/* Create cascade classifier, loaded with XML file */
+			cascade_name = "/home/odroid/catkin_ws/src/ardrone_autonomy/XML/lbpcascade_frontalface.xml";
+			cascade.load(cascade_name);
+			
+			focal_length = 0;
+		}
 
-public:
-	simplecanny(): it_(nh_){
-		image_sub_ = it_.subscribe("/ardrone/image_raw", 1, &simplecanny::imageCb, this);
-		image_pub_= it_.advertise("/arcv/Image",1);
-		pix_pub= n.advertise<ardrone_autonomy::image>("dpix_pub",1);
-		distance_pub = n.advertise<ardrone_autonomy::distance>("distance", 1000);
-		cv::namedWindow(WINDOW);
-	}
+		~simplecanny(){
+			cv::destroyWindow(WINDOW);
+		}
 
-  ~simplecanny(){
-    cv::destroyWindow(WINDOW);
-  }
+		void imageCb(const sensor_msgs::ImageConstPtr& msg){
+			/* OpenCV image pointer, copy message and point to copied image */
+			cv_bridge::CvImagePtr cv_imgptr_orig;
+			cv::Mat cv_imgptr;
+			cv_imgptr_orig = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+			cv::resize(cv_imgptr_orig->image, cv_imgptr, Size(), 1.25, 1.25, INTER_AREA);
 
-  void imageCb(const sensor_msgs::ImageConstPtr& msg){
+			/* Create new CV image w/ grayscale */
+			cv::Size image_size(cv_imgptr.cols, cv_imgptr.rows);
+			cv::Mat gray = cv::Mat(image_size, CV_8UC1);
+			cv::cvtColor(cv_imgptr, gray, CV_BGR2GRAY);
 
-    /* OpenCV image pointer, copy message and point to copied image */
-    cv_bridge::CvImagePtr cv_imgptr_orig;
-	cv::Mat cv_imgptr;
-    cv_imgptr_orig = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-	cv::resize(cv_imgptr_orig->image, cv_imgptr, Size(), 1.25, 1.25, INTER_AREA);
+			/*Create vector of type Rect and then use cascade classifier to detect all rects and store in faces */
+			vector<cv::Rect> faces;
+			faces.clear();
+			cascade.detectMultiScale(gray, faces, 1.2, 3, 0, cv::Size( 40, 40));
 
-    /* Create cascade classifier, loaded with XML file */
-    const char* cascade_name = "/home/odroid/catkin_ws/src/ardrone_autonomy/XML/lbpcascade_frontalface.xml";
-    cv::CascadeClassifier cascade;
-    cascade.load(cascade_name);
+			vector<int> face_area;
+			ardrone_autonomy::image msg_pub;
+			msg_pub.header.frame_id= "Image";
+			msg_pub.pixels = 0;
 
-    /* Create new CV image w/ grayscale */
-	cv::Size image_size(cv_imgptr.cols, cv_imgptr.rows);
-//	cv::Size image_size(320, 320);
-    cv::Mat gray = cv::Mat(image_size, CV_8UC1);
-    cv::cvtColor(cv_imgptr, gray, CV_BGR2GRAY);
+			/* Go through each face*/
+			for (int i = 0; i < faces.size(); i++){
+				CvPoint ul; CvPoint lr;
+				ul.x = faces[i].x; ul.y = faces[i].y;
+				lr.x = faces[i].x + faces[i].width; lr.y = faces[i].y + faces[i].height;
+				face_area.push_back((lr.x-ul.x)*(ul.y-lr.y));
+			}
 
-    /*Create vector of type Rect and then use cascade classifier to detect all rects and store in faces */
-    vector<cv::Rect> faces;
-    faces.clear();
-    cascade.detectMultiScale(gray, faces, 1.2, 3, 0, cv::Size( 40, 40));
+			static cv::Scalar RED = cv::Scalar(0, 0, 255);
+			int max = 0;
+			int index = 0;
 
-    vector<int> face_area;
-	ardrone_autonomy::image msg_pub;
-	msg_pub.header.frame_id= "Image";
-	msg_pub.pixels = 0;
+			for (int i = 0; i < face_area.size(); ++i){
+				if (face_area[i] > max)
+					index = i;
+			}
 
-	/* Go through each face -- use of iterator to go through vector */
-	for (int i = 0; i < faces.size(); i++){
-		CvPoint ul; CvPoint lr;
-		ul.x = faces[i].x; ul.y = faces[i].y;
-		lr.x = faces[i].x + faces[i].width; lr.y = faces[i].y + faces[i].height;
-		face_area.push_back((lr.x-ul.x)*(ul.y-lr.y));
-	}
+			/* Iterate through all faces found again, */
+			if (faces.size()>0){
+				CvPoint ul_final;
+				CvPoint lr_final;
 
-	/* Vector of ints to hold area of detected face and iterator of same type */
-	//vector<int>::iterator it;
+				ul_final.x = faces[index].x;
+				ul_final.y = faces[index].y;
 
-	static cv::Scalar RED = cv::Scalar(0, 0, 255);
-	int max = 0;
-	int index = 0;
+				lr_final.x = ul_final.x + faces[index].width;
+				lr_final.y = ul_final.y + faces[index].height;
 
-	for (int i = 0; i < face_area.size(); ++i){
-	  if (face_area[i] > max)
-		index = i;
-	}
+				//--------------------- calculating distance here---------------------------
 
-	/* Iterate through all faces found again, */
-	if (faces.size()>0){
-	  CvPoint ul_final;
-	  CvPoint lr_final;
+				//check if focal length is 0 and initialize it. the facewidth is approximately 6 inches and distance is 2 m.
 
-	  ul_final.x = faces[index].x;
-	  ul_final.y = faces[index].y;
+				if (focal_length == 0)
+					focal_length = 200 * faces[index].width / 15.24;
 
-	  lr_final.x = ul_final.x + faces[index].width;
-	  lr_final.y = ul_final.y + faces[index].height;
+				//use focal length to calculate distance away.
+				float distance = focal_length * 15.24 / faces[index].width;
+				ardrone_autonomy::distance distance_msg;
+				distance_msg.header.stamp = ros::Time::now();
+				distance_msg.x = distance;
+				distance_pub.publish(distance_msg);
 
-//--------------------- calculating distance here---------------------------
+				//--------------------- calculating distance ends here---------------------------
 
-// check if focal length is 0 and initialize it. the facewidth is approximately 6 inches and distance is 2 m.
+				cv::rectangle(cv_imgptr, ul_final, lr_final, RED, 3, 8, 0);
 
-	  if (focal_length == 0)
-		focal_length = 200 * faces[index].width / 15.24;
+				msg_pub.header.stamp = ros::Time::now();
+				msg_pub.pixels = (((lr_final.x+ul_final.x)/2) - ((cv_imgptr.cols)/2));
+				pix_pub.publish(msg_pub);
+			}
+			cv::imshow(WINDOW,cv_imgptr);
+			cv::waitKey(2);
+		}
+};
 
-// use focal length to calculate distance away.
-	  float distance = focal_length * 15.24 / faces[index].width;
-          ROS_INFO("Distance: %f", distance);
-          ROS_INFO("Distance: %d", faces[index].width);
-          ardrone_autonomy::distance distance_msg;
-	  distance_msg.header.stamp = ros::Time::now();
-	  distance_msg.x = distance;
-	  distance_pub.publish(distance_msg);
-
-
-//--------------------- calculating distance ends here---------------------------
-
-	  cv::rectangle(cv_imgptr, ul_final, lr_final, RED, 3, 8, 0);
-
-	  msg_pub.header.stamp = ros::Time::now();
-	  msg_pub.pixels = (((lr_final.x+ul_final.x)/2) - ((cv_imgptr.cols)/2));
-	  ROS_INFO("lr.x: %d, ur.x: %d", lr_final.x,ul_final.x);
-	  ROS_INFO("msgvalue:%d", msg_pub.pixels);
-	  pix_pub.publish(msg_pub);
-	}
-
-    cv::imshow(WINDOW,cv_imgptr);
-    cv::waitKey(2);
-}
+class ready {
+	int is_ready;
+	ros::NodeHandle nh;
+	
+	public:
+		ready() {
+			is_ready = 0;
+		}
+		
+		void callback(const std_msgs::Bool::ConstPtr& msg) {
+			is_ready = msg->data;
+		}
+		
+		void run() {
+			ros::Subscriber ready_sub;
+			
+			ready_sub = nh.subscribe<std_msgs::Bool> ("ready", 1, &ready::callback, this);
+			
+			while (is_ready == false)
+				ros::spinOnce();
+			
+			ready_sub.shutdown();
+			
+			return;
+		}
 };
 
 
 int main(int argc, char** argv)
 {
 	ros::init(argc, argv, "image_processing");
+	
+	//wait for ready signal from error module
+	ready obj;
+	obj.run();
+	
 	simplecanny processing_obj;
-
+		
 	ros::spin();
 
 	return 0;
