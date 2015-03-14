@@ -12,7 +12,6 @@
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
-#include <ardrone_autonomy/distance.h>
 #include <ardrone_autonomy/image.h>
 #include <ardrone_autonomy/Navdata.h>
 #include <geometry_msgs/Twist.h>
@@ -30,33 +29,6 @@ void sigint_handler(int sig) {
 	land.publish(empty_msg);
 	
 	ros::shutdown();
-}
-
-void initialize_drone(ros::NodeHandle n) {
-	ros::Publisher takeoff;
-	std_msgs::Empty empty_msg;
-	
-	usleep (2*1000*1000);
-	
-	ROS_INFO("INFO: Flat trimming...ensure drone is on a flat surface!");
-	system("rosservice call /ardrone/flattrim");
-	
-	takeoff = n.advertise<std_msgs::Empty>("/ardrone/takeoff", 1, true);
-	usleep (6*1000*1000);
-	ROS_INFO("INFO: Taking Off!");
-	takeoff.publish(empty_msg);
-}
-
-void set_drone_to_hover(ros::Publisher send_command) {
-	geometry_msgs::Twist msg;
-	msg.linear.x = 0;
-	msg.linear.y = 0;
-	msg.linear.z = 0;
-	msg.angular.x = 0;
-	msg.angular.y = 0;
-	msg.angular.z = 0;
-	
-	send_command.publish(msg);
 }
 
 void move_drone(ros::Publisher send_command, float velocity_x, float velocity_z, float yaw_speed) {
@@ -97,11 +69,10 @@ class increase_altitude {
 			
 			navdata_altitude = nh.subscribe<ardrone_autonomy::Navdata> ("/ardrone/navdata", 1, &increase_altitude::callback, this);
 			
-			while (current_altitude < desired_altitude) {
-//				ROS_INFO("INFO: Current altitude: %d, Desired altitude: %d", current_altitude, desired_altitude);
+			while (current_altitude < desired_altitude)
 				ros::spinOnce();
-			}
-			set_drone_to_hover(move_drone_pub);
+			
+			move_drone(move_drone_pub, 0, 0, 0);
 			navdata_altitude.shutdown();
 			
 			ROS_INFO("INFO: Altitude is now %d", current_altitude);
@@ -149,8 +120,8 @@ class PI_controller {
 			//compute derivative term
 			float derivative = ((error + 3*prev_error[2] - 3*prev_error[1] - prev_error[0])/6)/dt;
 			
-			ROS_INFO("Error: [%f] , Integral: [%f], Derivative: [%f]", error, integral, derivative);
-			ROS_INFO("dt: [%f]", dt);
+//			ROS_INFO("Error: [%f] , Integral: [%f], Derivative: [%f]", error, integral, derivative);
+//			ROS_INFO("dt: [%f]", dt);
 			
 			//compute output
 			output = (kp*error) + (ki*integral) + (kd*derivative);
@@ -171,71 +142,105 @@ class PI_controller {
 		}
 };
 
-void callback(const ardrone_autonomy::image::ConstPtr& pixels, \
-			  const ardrone_autonomy::distance::ConstPtr& distance, \
-			  ros::Publisher send_command, \
-			  PI_controller &velocity_PI, \
-			  PI_controller &yaw_PI) {
+class autonomy {
+	ros::NodeHandle n;
+	ros::Publisher send_command;
+	ros::Publisher ready_pub;
+	ros::Subscriber image_pro;
+	ros::Publisher takeoff;
+	int takeoff_altitude;
+	
+	PI_controller velocity_PI;
+	PI_controller yaw_PI;
+	PI_controller alt_PI;
+	
+	public:
+		autonomy(int alt, PI_controller &velocity_PI_in, PI_controller &yaw_PI_in, PI_controller &alt_PI_in)
+		:velocity_PI(velocity_PI_in)
+		,yaw_PI(yaw_PI_in)
+		,alt_PI(alt_PI_in)
+		{
+					 
+			//connect to takeoff topic
+			takeoff = n.advertise<std_msgs::Empty>("/ardrone/takeoff", 1, true);
+			//connect to the cmd_vel topic
+			send_command = n.advertise<geometry_msgs::Twist>("cmd_vel", 1000);
+			//connect to the ready topic
+			ready_pub = n.advertise<std_msgs::Bool>("ready",1);
+			
+			takeoff_altitude = alt;
+			velocity_PI = velocity_PI_in;
+			yaw_PI = yaw_PI_in;
+			alt_PI = alt_PI_in;
+		}
+				
+		void initialize() {	
+			std_msgs::Empty empty_msg;
+			
+			ROS_INFO("INFO: Flat trimming...ensure drone is on a flat surface!");
+			system("rosservice call /ardrone/flattrim");
 
-	//calculate forward speed
-	float velocity = -velocity_PI.compute_output(distance->x);
-	ROS_INFO("----->Req_velocity: [%f]<-----, Distance: [%f] , \n", velocity, distance->x);
+//			usleep (6.5*1000*1000);
+			ROS_INFO("INFO: Taking Off!");
+			takeoff.publish(empty_msg);
+			
+			usleep(3*1000*1000);
+			move_drone(send_command, 0, 0, 0);
+			
+			//increase altitude of drone from default
+//			increase_altitude increase(send_command, n, takeoff_altitude);
+//			increase.run();
+		}
+		
+		void ready() {
+			std_msgs::Bool ready_sig;
+			ready_sig.data = true;
+			ready_pub.publish(ready_sig);
+		}
+		
+		void callback(const ardrone_autonomy::image::ConstPtr& image) {
+			//calculate forward speed
+			float velocity = -velocity_PI.compute_output(image->distance);
+			ROS_INFO("----->Req_velocity: [%f]<-----, Distance: [%f]\n", velocity, image->distance);
 
-	//calculate yaw speed
-	float yaw_speed = yaw_PI.compute_output(pixels->pixels);
-	ROS_INFO("----->Yaw Speed: [%f]<------\n", yaw_speed);
+			//calculate yaw speed
+			float yaw_speed = yaw_PI.compute_output(image->yaw);
+			ROS_INFO("----->Yaw Speed: [%f]<------, Horizontal: [%f]\n", yaw_speed, image->yaw);
+			
+			//calculate vertical speed
+			float vertical_speed = alt_PI.compute_output(image->height);
+			ROS_INFO("----->Vertical Speed: [%f]<------, Vertical: [%f]\n", vertical_speed, image->height);
 
-	if (yaw_speed == 0 && velocity == 0) {
-		set_drone_to_hover(send_command);
-	} else {
-		move_drone(send_command, velocity, 0, yaw_speed);
-	}
-}
+			move_drone(send_command, velocity, 0, yaw_speed);
+		}
+		
+		void tracking() {
+			//connect to the image_data topic
+			image_pro = n.subscribe<ardrone_autonomy::image> ("image_data", 100, &autonomy::callback, this);
+			
+			ros::spin();
+		}
+};
 
 int main (int argc, char **argv) {
 	ros::init(argc, argv, "error", ros::init_options::NoSigintHandler);
 	signal(SIGINT, sigint_handler);
-
-	ros::NodeHandle n;
-	ros::Publisher send_command;
-	ros::Publisher ready_pub;
 	
 	//intialize PI_controller objects
-	//PI_controller velocity_PI(200, 0.1, 0.1, -0.1, 0.0003, 0, 0.0025);
-	//PI_controller yaw_PI     (0, 0.1, 0.5, -0.5, 0.0015, 0, 0.004);
-	PI_controller velocity_PI(200, 0.1, 0.1, -0.1, atof(argv[1]), atof(argv[2]), atof(argv[3]));
-	PI_controller yaw_PI     (0, 0.2, 0.5, -0.5, atof(argv[4]), atof(argv[5]), atof(argv[6]));
-
-	//connect to the cmd_vel topic
-	send_command = n.advertise<geometry_msgs::Twist>("cmd_vel", 1000);
-	//connect to the ready topic
-	ready_pub = n.advertise<std_msgs::Bool>("ready",1);
+	PI_controller altitude_PI(0, 0.5, 0.4, -0.4, atof(argv[1]), atof(argv[2]), atof(argv[3]));
+	PI_controller velocity_PI(200, 0.1, 0.1, -0.1, atof(argv[4]), atof(argv[5]), atof(argv[6]));
+	PI_controller yaw_PI     (0, 0.2, 0.5, -0.5, atof(argv[7]), atof(argv[8]), atof(argv[9]));
+	
+	autonomy drone(1300, velocity_PI, yaw_PI, altitude_PI);
 	
 	//start drone
-	initialize_drone(n);
-	usleep(3*1000*1000);
-	set_drone_to_hover(send_command);
-	
-	//increase altitude of drone from default
-	increase_altitude increase(send_command, n, 1300);
-	increase.run();
+	drone.initialize();
 	
 	//send ready signal to image_pro
-	std_msgs::Bool ready;
-	ready.data = true;
-	ready_pub.publish(ready);
+	drone.ready();
 	
-	//subscribe to distance and image_pro
-	message_filters::Subscriber<ardrone_autonomy::image> pixel_sub(n, "dpix_pub", 1);
-	message_filters::Subscriber<ardrone_autonomy::distance> distance_sub(n, "distance", 1);
-	
-	//synchronize messages from distance and image_pro
-	typedef message_filters::sync_policies::ApproximateTime<ardrone_autonomy::image, ardrone_autonomy::distance> MySyncPolicy;
-	message_filters::Synchronizer<MySyncPolicy> sync(MySyncPolicy(10), pixel_sub, distance_sub);
-	
-	sync.registerCallback(boost::bind(&callback, _1, _2, send_command, velocity_PI, yaw_PI));
-		
-	ros::spin();
+	//start tracking
+	drone.tracking();
 
 	return 0;
 }

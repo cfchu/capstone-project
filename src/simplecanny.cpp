@@ -46,7 +46,7 @@ class simplecanny
 		simplecanny(): it_(nh_){
 			image_sub_ = it_.subscribe("/ardrone/image_raw", 1, &simplecanny::imageCb, this);
 			image_pub_= it_.advertise("/arcv/Image",1);
-			pix_pub= n.advertise<ardrone_autonomy::image>("dpix_pub",1);
+			pix_pub= n.advertise<ardrone_autonomy::image>("image_data",1);
 			distance_pub = n.advertise<ardrone_autonomy::distance>("distance", 1000);
 			cv::namedWindow(WINDOW);
 			
@@ -80,8 +80,8 @@ class simplecanny
 
 			vector<int> face_area;
 			ardrone_autonomy::image msg_pub;
-			msg_pub.header.frame_id= "Image";
-			msg_pub.pixels = 0;
+			msg_pub.yaw = 0;
+			msg_pub.height = 0;
 
 			/* Go through each face*/
 			for (int i = 0; i < faces.size(); i++){
@@ -114,23 +114,24 @@ class simplecanny
 				//--------------------- calculating distance here---------------------------
 
 				//check if focal length is 0 and initialize it. the facewidth is approximately 6 inches and distance is 2 m.
-
 				if (focal_length == 0)
 					focal_length = 200 * faces[index].width / 15.24;
 
 				//use focal length to calculate distance away.
-				float distance = focal_length * 15.24 / faces[index].width;
-				ardrone_autonomy::distance distance_msg;
-				distance_msg.header.stamp = ros::Time::now();
-				distance_msg.x = distance;
-				distance_pub.publish(distance_msg);
+				msg_pub.distance = focal_length * 15.24 / faces[index].width;
+//				ardrone_autonomy::distance distance_msg;
+//				distance_msg.header.stamp = ros::Time::now();
+//				distance_msg.x = distance;
+//				distance_pub.publish(distance_msg);
 
 				//--------------------- calculating distance ends here---------------------------
+				
+				msg_pub.height = (((lr_final.y+ul_final.y)/2) - ((cv_imgptr.rows)/2));
 
 				cv::rectangle(cv_imgptr, ul_final, lr_final, RED, 3, 8, 0);
 
 				msg_pub.header.stamp = ros::Time::now();
-				msg_pub.pixels = (((lr_final.x+ul_final.x)/2) - ((cv_imgptr.cols)/2));
+				msg_pub.yaw = (((lr_final.x+ul_final.x)/2) - ((cv_imgptr.cols)/2));
 				pix_pub.publish(msg_pub);
 			}
 			cv::imshow(WINDOW,cv_imgptr);
