@@ -200,18 +200,18 @@ class autonomy {
 		
 		void callback(const ardrone_autonomy::image::ConstPtr& image) {
 			//calculate forward speed
-			float velocity = -velocity_PI.compute_output(image->distance);
-			ROS_INFO("----->Req_velocity: [%f]<-----, Distance: [%f]\n", velocity, image->distance);
+			float x_velocity = -velocity_PI.compute_output(image->distance);
+			ROS_INFO("----->x_velocity: [%f]<-----, Distance: [%f]\n", x_velocity, image->distance);
 
 			//calculate yaw speed
 			float yaw_speed = yaw_PI.compute_output(image->yaw);
 			ROS_INFO("----->Yaw Speed: [%f]<------, Horizontal: [%f]\n", yaw_speed, image->yaw);
 			
 			//calculate vertical speed
-			float vertical_speed = alt_PI.compute_output(image->height);
-			ROS_INFO("----->Vertical Speed: [%f]<------, Vertical: [%f]\n", vertical_speed, image->height);
+			float z_velocity = alt_PI.compute_output(image->height);
+			ROS_INFO("----->z_velocity: [%f]<------, Vertical: [%f]\n", z_velocity, image->height);
 
-			move_drone(send_command, velocity, 0, yaw_speed);
+			move_drone(send_command, x_velocity, z_velocity, yaw_speed);
 		}
 		
 		void tracking() {
