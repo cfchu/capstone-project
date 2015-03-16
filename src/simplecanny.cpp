@@ -117,12 +117,8 @@ class simplecanny
 				if (focal_length == 0)
 					focal_length = 200 * faces[index].width / 15.24;
 
-				//use focal length to calculate distance away.
+				//use focal length to calculate distance
 				msg_pub.distance = focal_length * 15.24 / faces[index].width;
-//				ardrone_autonomy::distance distance_msg;
-//				distance_msg.header.stamp = ros::Time::now();
-//				distance_msg.x = distance;
-//				distance_pub.publish(distance_msg);
 
 				//--------------------- calculating distance ends here---------------------------
 				
@@ -132,6 +128,12 @@ class simplecanny
 
 				msg_pub.header.stamp = ros::Time::now();
 				msg_pub.yaw = (((lr_final.x+ul_final.x)/2) - ((cv_imgptr.cols)/2));
+				pix_pub.publish(msg_pub);
+			} else {
+				msg_pub.header.stamp = ros::Time::now();
+				msg_pub.distance = 200;
+				msg_pub.height = 0;
+				msg_pub.yaw = 0;
 				pix_pub.publish(msg_pub);
 			}
 			cv::imshow(WINDOW,cv_imgptr);

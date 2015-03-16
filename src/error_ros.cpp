@@ -180,7 +180,6 @@ class autonomy {
 			ROS_INFO("INFO: Flat trimming...ensure drone is on a flat surface!");
 			system("rosservice call /ardrone/flattrim");
 
-//			usleep (6.5*1000*1000);
 			ROS_INFO("INFO: Taking Off!");
 			takeoff.publish(empty_msg);
 			
@@ -188,8 +187,8 @@ class autonomy {
 			move_drone(send_command, 0, 0, 0);
 			
 			//increase altitude of drone from default
-//			increase_altitude increase(send_command, n, takeoff_altitude);
-//			increase.run();
+			increase_altitude increase(send_command, n, takeoff_altitude);
+			increase.run();
 		}
 		
 		void ready() {

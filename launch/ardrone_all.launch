@@ -1,0 +1,20 @@
+<!-- This is a sample lanuch file, please change it based on your needs -->
+<launch>
+	<node name="ardrone_driver" pkg="ardrone_autonomy" type="ardrone_driver" clear_params="true">
+	    <param name="outdoor" value="1" />
+		<param name="enable_legacy_navdata" value="true" />
+		<param name="enable_navdata_altitude" value="false" />
+	    <param name="altitude_max" value="1500" />
+        <param name="altitude_min" value="50" />
+		<param name="detect_type" value="3" />
+	    <param name="enemy_colors" value="1" />
+	    <param name="detections_select_h" value="1" />
+        <!-- Covariance Values (3x3 matrices reshaped to 1x9)-->
+        <rosparam param="cov/imu_la">[0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1]</rosparam>
+        <rosparam param="cov/imu_av">[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]</rosparam>
+        <rosparam param="cov/imu_or">[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 100000.0]</rosparam>
+	</node>
+	<node name="image" pkg="ardrone_autonomy" type="image_pro" required="true"/>
+	<node name="error" pkg="ardrone_autonomy" type="error" args="0.0006 0 0.005 0.0006 0 0.02 0.001 0 0.0015" required="true"/>
+</launch>
+
