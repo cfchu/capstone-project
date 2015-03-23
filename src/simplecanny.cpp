@@ -48,7 +48,7 @@ class simplecanny
 			image_pub_= it_.advertise("/arcv/Image",1);
 			pix_pub= n.advertise<ardrone_autonomy::image>("image_data",1);
 			distance_pub = n.advertise<ardrone_autonomy::distance>("distance", 1000);
-			cv::namedWindow(WINDOW);
+//			cv::namedWindow(WINDOW);
 			
 			/* Create cascade classifier, loaded with XML file */
 			cascade_name = "/home/odroid/catkin_ws/src/ardrone_autonomy/XML/lbpcascade_frontalface.xml";
@@ -58,7 +58,7 @@ class simplecanny
 		}
 
 		~simplecanny(){
-			cv::destroyWindow(WINDOW);
+//			cv::destroyWindow(WINDOW);
 		}
 
 		void imageCb(const sensor_msgs::ImageConstPtr& msg){
@@ -115,7 +115,7 @@ class simplecanny
 
 				//check if focal length is 0 and initialize it. the facewidth is approximately 6 inches and distance is 2 m.
 				if (focal_length == 0)
-					focal_length = 200 * faces[index].width / 15.24;
+					focal_length = 250 * faces[index].width / 15.24;
 
 				//use focal length to calculate distance
 				msg_pub.distance = focal_length * 15.24 / faces[index].width;
@@ -129,15 +129,15 @@ class simplecanny
 				msg_pub.header.stamp = ros::Time::now();
 				msg_pub.yaw = (((lr_final.x+ul_final.x)/2) - ((cv_imgptr.cols)/2));
 				pix_pub.publish(msg_pub);
-			} else {
-				msg_pub.header.stamp = ros::Time::now();
-				msg_pub.distance = 200;
-				msg_pub.height = 0;
-				msg_pub.yaw = 0;
-				pix_pub.publish(msg_pub);
-			}
-			cv::imshow(WINDOW,cv_imgptr);
-			cv::waitKey(2);
+			}// else {
+//				msg_pub.header.stamp = ros::Time::now();
+//				msg_pub.distance = 200;
+//				msg_pub.height = 0;
+//				msg_pub.yaw = 0;
+//				pix_pub.publish(msg_pub);
+//			}
+//			cv::imshow(WINDOW,cv_imgptr);
+//			cv::waitKey(2);
 		}
 };
 

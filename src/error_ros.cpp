@@ -88,9 +88,10 @@ class PI_controller {
 	float outMax, outMin;
 	float prev_error[3];
 	float output_slew_rate, prev_output;
+	float offset;
 	
 	public:
-		PI_controller(float SP_in, float slew_rate_in, float outMax_in, float outMin_in, float kp_in, float ki_in, float kd_in) {
+		PI_controller(float SP_in, float slew_rate_in, float outMax_in, float outMin_in, float kp_in, float ki_in, float kd_in, float offset_in) {
 			time_stamp_prev = 0;
 			integral = 0;
 			kp = kp_in; ki = ki_in; kd = kd_in;
@@ -100,6 +101,7 @@ class PI_controller {
 			prev_error[0] = 0; prev_error[1] = 0; prev_error[2] = 0;
 			output_slew_rate = slew_rate_in;
 			prev_output = 0;
+			offset = offset_in;
 		}
 		
 		float compute_output(float PV){
@@ -120,11 +122,14 @@ class PI_controller {
 			//compute derivative term
 			float derivative = ((error + 3*prev_error[2] - 3*prev_error[1] - prev_error[0])/6)/dt;
 			
-//			ROS_INFO("Error: [%f] , Integral: [%f], Derivative: [%f]", error, integral, derivative);
-//			ROS_INFO("dt: [%f]", dt);
+			ROS_INFO("Error: [%f] , Integral: [%f], Derivative: [%f]", error, integral, derivative);
+			ROS_INFO("dt: [%f]", dt);
 			
-			//compute output
-			output = (kp*error) + (ki*integral) + (kd*derivative);
+			//compute output if error past some bounds
+			if (error > offset || error < (offset*(-1)))
+				output = (kp*error) + (ki*integral) + (kd*derivative);
+			else
+				output = 0;
 			//slew rate
 			if (output-prev_output > output_slew_rate) output = prev_output+output_slew_rate;
 			else if (output-prev_output < -output_slew_rate) output = prev_output-output_slew_rate;
@@ -187,8 +192,8 @@ class autonomy {
 			move_drone(send_command, 0, 0, 0);
 			
 			//increase altitude of drone from default
-			increase_altitude increase(send_command, n, takeoff_altitude);
-			increase.run();
+//			increase_altitude increase(send_command, n, takeoff_altitude);
+//			increase.run();
 		}
 		
 		void ready() {
@@ -225,10 +230,14 @@ int main (int argc, char **argv) {
 	ros::init(argc, argv, "error", ros::init_options::NoSigintHandler);
 	signal(SIGINT, sigint_handler);
 	
+	ROS_INFO("1: [%f], 2: [%f], 3: [%f]", atof(argv[1]), atof(argv[2]), atof(argv[3]));
+	ROS_INFO("4: [%f], 5: [%f], 6: [%f]", atof(argv[4]), atof(argv[5]), atof(argv[6]));
+	ROS_INFO("7: [%f], 8: [%f], 9: [%f]", atof(argv[7]), atof(argv[8]), atof(argv[9]));
+	
 	//intialize PI_controller objects
-	PI_controller altitude_PI(0, 0.5, 0.4, -0.4, atof(argv[1]), atof(argv[2]), atof(argv[3]));
-	PI_controller velocity_PI(200, 0.1, 0.1, -0.1, atof(argv[4]), atof(argv[5]), atof(argv[6]));
-	PI_controller yaw_PI     (0, 0.2, 0.5, -0.5, atof(argv[7]), atof(argv[8]), atof(argv[9]));
+	PI_controller altitude_PI(0, 0.5, 0.4, -0.4, atof(argv[1]), atof(argv[2]), atof(argv[3]), atof(argv[4]));
+	PI_controller velocity_PI(250, 0.2, 0.3, -0.3, atof(argv[5]), atof(argv[6]), atof(argv[7]), atof(argv[8]));
+	PI_controller yaw_PI     (0, 0.2, 0.5, -0.5, atof(argv[9]), atof(argv[10]), atof(argv[11]), atof(argv[12]));
 	
 	autonomy drone(1300, velocity_PI, yaw_PI, altitude_PI);
 	

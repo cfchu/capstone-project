@@ -1,6 +1,6 @@
 <!-- This is a sample lanuch file, please change it based on your needs -->
 <launch>
-	<node name="ardrone_driver" pkg="ardrone_autonomy" type="ardrone_driver" output="screen" clear_params="true">
+	<node name="ardrone_driver" pkg="ardrone_autonomy" type="ardrone_driver" clear_params="true">
 	    <param name="outdoor" value="1" />
 		<param name="enable_legacy_navdata" value="true" />
 		<param name="enable_navdata_altitude" value="false" />

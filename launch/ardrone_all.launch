@@ -14,7 +14,7 @@
         <rosparam param="cov/imu_av">[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]</rosparam>
         <rosparam param="cov/imu_or">[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 100000.0]</rosparam>
 	</node>
-	<node name="image" pkg="ardrone_autonomy" type="image_pro" required="true"/>
-	<node name="error" pkg="ardrone_autonomy" type="error" args="0.0006 0 0.005 0.0006 0 0.02 0.001 0 0.0015" required="true"/>
+	<node name="image" pkg="ardrone_autonomy" type="image_pro"/>
+	<node name="error" pkg="ardrone_autonomy" type="error" args="0 0 0.0 40 0.0 0 0.0 0 0.0 0 0.0 0" required="true" output="screen"/>
 </launch>
 
