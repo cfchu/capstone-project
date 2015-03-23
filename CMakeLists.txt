@@ -167,7 +167,7 @@ target_link_libraries(error ${catkin_LIBRARIES})
 add_dependencies(error project_files_generate_messages_cpp)
 
 #Image Processing module
-add_executable(image_pro src/simplecanny.cpp)
+add_executable(image_pro src/image_proc.cpp)
 
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})

@@ -2,5 +2,5 @@
 
 <launch>
 	<node name="image" pkg="ardrone_autonomy" type="image_pro" required="true"/>
-	<node name="error" pkg="ardrone_autonomy" type="error" args="0 0 0.0 40 0.0 0 0.0 0 0.0 0 0.0 0" required="true"/>
+	<node name="error" pkg="ardrone_autonomy" type="error" args="0.0004 0 0.005 40 0.0005 0 0.005 0 0.001 0 0.0015 0" required="true"/>
 </launch>

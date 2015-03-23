@@ -132,7 +132,7 @@ class PID_controller {
 			error = SP - PV;
 			
 			//compute integral term
-			integral = integral + (error*dt);
+			integral += error * dt;
 			
 			//compute derivative term
 			float derivative = ((error + 3*prev_error[2] - 3*prev_error[1] - prev_error[0])/6)/dt;
@@ -209,7 +209,7 @@ class autonomy {
 			ROS_INFO("INFO: Taking Off!");
 			takeoff_pub.publish(empty_msg);
 			
-			usleep(3*1000*1000);					//Wait for drone to complete takeoff
+			usleep(3*1000*1000);					//Wait for drone to complete take-off
 			move_drone(move_drone_pub, 0, 0, 0);
 			
 			//increase altitude of drone from default (1m)
@@ -248,7 +248,7 @@ class autonomy {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// int main
+// main
 ////////////////////////////////////////////////////////////////////////////////
 
 int main (int argc, char **argv) {
